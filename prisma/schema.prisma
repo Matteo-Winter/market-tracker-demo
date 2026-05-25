@@ -1,0 +1,406 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model MainCategory {
+  id         String      @id @default(uuid())
+  name       String
+  slug       String      @unique
+  createdAt  DateTime    @default(now())
+  category2  Category2[]
+  importRuns ImportRun[]
+  deletedAt DateTime?
+}
+
+model Category2 {
+  id             String   @id @default(uuid())
+  mainCategoryId String
+  name           String
+  slug           String
+  createdAt      DateTime @default(now())
+
+  mainCategory  MainCategory   @relation(fields: [mainCategoryId], references: [id])
+  nodes         CategoryNode[]
+  importBatches ImportBatch[]
+  runLinks      RunCategory2[]
+
+  productRows             ProductRow[]
+  parentProducts          ParentProduct[]
+  childToParentMap        ChildToParentMap[]
+  aggParentProductMonths  AggParentProductMonth[]
+  aggBrandNodeMonths      AggBrandNodeMonth[]
+  aggUnmappedParentMonths AggUnmappedParentMonth[]
+
+  deletedAt DateTime?
+}
+
+model CategoryNode {
+  id          String   @id @default(uuid())
+  category2Id String
+  parentId    String?
+  level       Int
+  name        String
+  path        String
+  isLeaf      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  category2 Category2      @relation(fields: [category2Id], references: [id])
+  parent    CategoryNode?  @relation("NodeParent", fields: [parentId], references: [id])
+  children  CategoryNode[] @relation("NodeParent")
+
+  @@unique([category2Id, path])
+}
+
+model ImportBatch {
+  id          String     @id @default(uuid())
+  category2Id String
+  month       String? // z.B. "2026-02"
+  status      String     @default("CREATED")
+  createdAt   DateTime   @default(now())
+  runId       String?
+  run         ImportRun? @relation(fields: [runId], references: [id])
+
+  category2   Category2    @relation(fields: [category2Id], references: [id])
+  files       ImportFile[]
+  productRows ProductRow[]
+
+  @@index([runId])
+}
+
+model ImportFile {
+  id          String   @id @default(uuid())
+  batchId     String
+  filename    String
+  status      String   @default("UPLOADED")
+  mimeType    String?
+  sizeBytes   Int?
+  contentText String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  batch ImportBatch @relation(fields: [batchId], references: [id])
+
+  deletedAt DateTime?
+}
+
+model JobProgress {
+  id         String    @id @default(uuid())
+  jobType    String
+  status     String    @default("RUNNING")
+  progress   Int       @default(0)
+  message    String?
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+}
+
+model ProductRow {
+  id          String @id @default(uuid())
+  batchId     String
+  category2Id String
+  month       String
+
+  asin       String
+  title      String?
+  brand      String?
+  brandNorm  String?
+  imageUrl   String?
+  leafString String?
+
+  price         Float?
+  parentRevenue Float?
+  parentSales   Int?
+
+  asinRevenue Float?
+  asinSales   Int?
+
+  reviewsCount Int?
+  rating       Float?
+
+  ean  String?
+  gtin String?
+  upc  String?
+  isbn String?
+
+  createdAt DateTime @default(now())
+
+  batch     ImportBatch @relation(fields: [batchId], references: [id])
+  category2 Category2   @relation(fields: [category2Id], references: [id])
+
+  bsr       Int?
+  subcatBsr Int?
+
+  @@index([batchId])
+  @@index([category2Id, month])
+  @@index([asin])
+}
+
+model ParentProduct {
+  id                 String   @id @default(uuid())
+  category2Id        String
+  representativeAsin String
+  representativeUrl  String?
+  brandNorm          String?
+  titleNorm          String?
+  createdAt          DateTime @default(now())
+
+  category2 Category2 @relation(fields: [category2Id], references: [id])
+
+  childMappings ChildToParentMap[]
+  aggMonths     AggParentProductMonth[]
+
+  @@index([category2Id])
+  @@index([representativeAsin])
+}
+
+model ChildToParentMap {
+  id                 String   @id @default(uuid())
+  month              String
+  category2Id        String
+  childAsin          String
+  parentProductId    String
+  representativeAsin String
+  method             String?
+  createdAt          DateTime @default(now())
+
+  category2     Category2     @relation(fields: [category2Id], references: [id])
+  parentProduct ParentProduct @relation(fields: [parentProductId], references: [id])
+
+  @@unique([month, category2Id, childAsin])
+  @@index([category2Id, month])
+  @@index([parentProductId])
+}
+
+model ProductClassification {
+  id              String @id @default(uuid())
+  month           String
+  category2Id     String
+  parentProductId String
+
+  leafString   String?
+  leafNodeId   String?
+  order3NodeId String?
+  isUnmapped   Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@unique([month, category2Id, parentProductId])
+  @@index([category2Id, month, isUnmapped])
+}
+
+model AggParentProductMonth {
+  id              String @id @default(uuid())
+  month           String
+  category2Id     String
+  parentProductId String
+
+  representativeAsin String
+  representativeUrl  String?
+  brandNorm          String?
+
+  leafString   String?
+  leafNodeId   String?
+  order3NodeId String?
+  isUnmapped   Boolean @default(false)
+
+  // Parent-Level KPI (aus Datei / robust zusammengefasst)
+  parentRevenue Float?
+  parentSales   Int?
+
+  // Child-Summen (Debug/Validierung)
+  asinRevenueSum Float?
+  asinSalesSum   Int?
+
+  childAsinCount     Int
+  priceMedian        Float?
+  priceQ1            Float?
+  priceQ3            Float?
+  priceMin           Float?
+  priceMax           Float?
+  bsrMedian          Int?
+  subcatBsrMedian    Int?
+  reviewsCountMedian Int?
+  ratingMedian       Float?
+  revenueCoverage    Float?
+  salesCoverage      Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category2     Category2     @relation(fields: [category2Id], references: [id])
+  parentProduct ParentProduct @relation(fields: [parentProductId], references: [id])
+
+  @@unique([month, category2Id, parentProductId])
+  @@index([category2Id, month])
+  @@index([parentProductId])
+}
+
+model AggBrandNodeMonth {
+  id          String @id @default(uuid())
+  month       String
+  category2Id String
+  brandNorm   String
+
+  revenueSum          Float?
+  salesSum            Int?
+  parentProductsCount Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category2 Category2 @relation(fields: [category2Id], references: [id])
+
+  @@unique([month, category2Id, brandNorm])
+  @@index([category2Id, month])
+}
+
+model AggCategoryNodeMonth {
+  id             String @id @default(uuid())
+  month          String
+  mainCategoryId String
+
+  // Damit wir Ordnung 1/2/3 in 1 Tabelle speichern können:
+  scopeLevel Int // 1=MainCategory, 2=Category2, 3=Order3 Node
+  scopeId    String // id passend zum scopeLevel (mainCategoryId/category2Id/nodeId)
+
+  category2Id String?
+  nodeId      String?
+  nodeName    String?
+
+  revenueSum          Float?
+  salesSum            Int?
+  parentProductsCount Int
+  brandsCount         Int
+
+  priceMedian     Float?
+  priceQ1         Float?
+  priceQ3         Float?
+  bsrMedian       Int?
+  subcatBsrMedian Int?
+
+  top10BrandShare Float?
+  topBrandNorm    String?
+  topBrandRevenue Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([month, scopeLevel, scopeId])
+  @@index([mainCategoryId, month])
+  @@index([category2Id, month])
+}
+
+model AggUnmappedParentMonth {
+  id              String @id @default(uuid())
+  month           String
+  category2Id     String
+  parentProductId String
+
+  representativeAsin String
+  leafString         String?
+  parentRevenue      Float?
+  parentSales        Int?
+  childAsinCount     Int
+  brandNorm          String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  category2 Category2 @relation(fields: [category2Id], references: [id])
+
+  @@unique([month, category2Id, parentProductId])
+  @@index([category2Id, month])
+}
+
+model ImportRun {
+  id             String   @id @default(uuid())
+  mainCategoryId String
+  month          String
+  status         String   @default("CREATED")
+  note           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  collectedDate  String?
+
+  // ✅ NEU: Vergleichs-Run (Vormonat)
+  compareToRunId String?
+  compareToRun   ImportRun?  @relation("RunCompare", fields: [compareToRunId], references: [id])
+  comparedBy     ImportRun[] @relation("RunCompare")
+
+  mainCategory   MainCategory   @relation(fields: [mainCategoryId], references: [id])
+  category2Links RunCategory2[]
+  batches        ImportBatch[]
+
+  @@unique([mainCategoryId, month])
+  @@index([month])
+  @@index([compareToRunId]) // optional, aber sinnvoll
+
+  deletedAt DateTime?
+}
+
+model RunCategory2 {
+  id          String @id @default(uuid())
+  runId       String
+  category2Id String
+
+  // Genau 1 aktiver Batch pro Category2 im Run (kann null sein)
+  activeBatchId String?
+
+  // ob diese Category2 im Run "mitgemacht" werden muss
+  isRequired Boolean @default(true)
+
+  // Status der Zeile im Run
+  status String @default("MISSING") // MISSING|READY|PROCESSING|DONE|ERROR
+
+  lastProcessedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  run       ImportRun @relation(fields: [runId], references: [id])
+  category2 Category2 @relation(fields: [category2Id], references: [id])
+
+  @@unique([runId, category2Id])
+  @@index([runId])
+  @@index([category2Id])
+  @@index([activeBatchId])
+}
+
+
+
+model CompetitorSnapshot {
+  id             String                   @id @default(uuid())
+  snapshotDate   String                   @unique
+  sourceFilename String
+  createdAt      DateTime                 @default(now())
+
+  items CompetitorSnapshotItem[]
+
+  @@index([createdAt])
+}
+
+model CompetitorSnapshotItem {
+  id            String   @id @default(uuid())
+  snapshotId    String
+  asin          String
+  title         String?
+  brand         String?
+  category      String?
+  price         Float?
+  bsr           Int?
+  reviewCount   Int?
+  rating        Float?
+  asinRevenue   Float?
+  parentRevenue Float?
+  asinSales     Int?
+  parentSales   Int?
+  imageUrl String?
+  createdAt     DateTime @default(now())
+
+  snapshot CompetitorSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@unique([snapshotId, asin])
+  @@index([asin])
+  @@index([snapshotId])
+}

@@ -1,0 +1,11 @@
+-- AlterTable
+ALTER TABLE "AggCategoryNodeMonth" ADD COLUMN     "priceQ1" DOUBLE PRECISION,
+ADD COLUMN     "priceQ3" DOUBLE PRECISION;
+
+-- AlterTable
+ALTER TABLE "AggParentProductMonth" ADD COLUMN     "priceMax" DOUBLE PRECISION,
+ADD COLUMN     "priceMin" DOUBLE PRECISION,
+ADD COLUMN     "priceQ1" DOUBLE PRECISION,
+ADD COLUMN     "priceQ3" DOUBLE PRECISION,
+ADD COLUMN     "revenueCoverage" DOUBLE PRECISION,
+ADD COLUMN     "salesCoverage" DOUBLE PRECISION;
